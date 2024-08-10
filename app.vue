@@ -34,14 +34,21 @@
       {{ eraseMode ? "Drawing Mode" : "Erase Mode" }}
     </button>
 
-    <canvas ref="canvas" class="drawing-canvas"></canvas>
+    <!-- <canvas ref="canvas" class="drawing-canvas"></canvas> -->
+    <div class="canvas-container">
+      <canvas ref="imageCanvas" class="image-canvas"></canvas>
+      <canvas ref="drawingCanvas" class="drawing-canvas"></canvas>
+    </div>
+
+    <!-- 제출 버튼 추가 -->
+    <button @click="submitVideo" :disabled="!downloadLink" class="submit">
+      Submit Video
+    </button>
+    <div class="result">{{ result }}</div>
     <video ref="recordedVideo" controls></video>
     <a :href="downloadLink" v-if="downloadLink" download="recorded-video.webm"
       >Download Video</a
     >
-
-    <!-- 제출 버튼 추가 -->
-    <button @click="submitVideo" :disabled="!downloadLink">Submit Video</button>
   </div>
 </template>
 
@@ -58,13 +65,35 @@ const downloadLink = ref(null);
 const drawing = ref(false);
 const eraseMode = ref(false);
 const image = ref(null);
-const penColor = ref("#fff"); // 기본 색상 설정
+const penColor = ref("#000"); // 기본 색상 설정
 const penSize = ref(5); // 기본 펜 크기 설정
 const eraserSize = ref(20); // 기본 지우개 크기 설정
+const result = ref("");
+const imageCanvas = ref(null);
+const imageCtx = ref(null);
+const drawingCanvas = ref(null);
+const drawingCtx = ref(null);
 
 const startRecording = async () => {
   try {
-    const stream = canvas.value.captureStream(30); // 30 FPS로 스트림 생성
+    // 임시 캔버스 생성
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = imageCanvas.value.width;
+    tempCanvas.height = imageCanvas.value.height;
+    const tempCtx = tempCanvas.getContext("2d");
+
+    // 캔버스 합치기 함수
+    const mergeCanvases = () => {
+      tempCtx.drawImage(imageCanvas.value, 0, 0);
+      tempCtx.drawImage(drawingCanvas.value, 0, 0);
+    };
+
+    // 스트림 생성
+    const stream = tempCanvas.captureStream(30); // 30 FPS
+
+    // 주기적으로 캔버스 합치기
+    setInterval(mergeCanvases, 1000 / 30); // 30 FPS에 맞춰 업데이트
+
     const audioStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
     });
@@ -116,36 +145,52 @@ const onImageUpload = (event) => {
 
 const startDrawing = (event) => {
   drawing.value = true;
-  draw(event);
+  const rect = drawingCanvas.value.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  drawingCtx.value.beginPath();
+  drawingCtx.value.moveTo(x, y);
 };
 
 const endDrawing = () => {
   drawing.value = false;
-  ctx.value.beginPath();
+  drawingCtx.value.beginPath(); // 경로 초기화
 };
 
 const draw = (event) => {
   if (!drawing.value) return;
 
-  ctx.value.lineWidth = eraseMode.value ? eraserSize.value : penSize.value;
-  ctx.value.lineCap = "round";
+  drawingCtx.value.lineWidth = eraseMode.value
+    ? eraserSize.value
+    : penSize.value;
+  drawingCtx.value.lineCap = "round";
 
   if (eraseMode.value) {
-    ctx.value.globalCompositeOperation = "destination-out";
-    ctx.value.strokeStyle = "rgba(0,0,0,1)";
+    drawingCtx.value.globalCompositeOperation = "destination-out";
   } else {
-    ctx.value.globalCompositeOperation = "source-over";
-    ctx.value.strokeStyle = penColor.value;
+    drawingCtx.value.globalCompositeOperation = "source-over";
+    drawingCtx.value.strokeStyle = penColor.value;
   }
 
-  const rect = canvas.value.getBoundingClientRect();
+  const rect = drawingCanvas.value.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
 
-  ctx.value.lineTo(x, y);
-  ctx.value.stroke();
-  ctx.value.beginPath();
-  ctx.value.moveTo(x, y);
+  drawingCtx.value.lineTo(x, y);
+  drawingCtx.value.stroke();
+};
+
+const redrawImage = () => {
+  if (image.value.src) {
+    ctx.value.globalCompositeOperation = "source-over";
+    ctx.value.drawImage(
+      image.value,
+      0,
+      0,
+      canvas.value.width,
+      canvas.value.height
+    );
+  }
 };
 
 const toggleEraseMode = () => {
@@ -167,49 +212,55 @@ const submitVideo = async () => {
       body: formData,
     });
 
-    if (uploadResponse.ok) {
-      alert("Video uploaded successfully!");
-    } else {
-      alert("Video upload failed.");
-    }
+    result.value = await uploadResponse.text();
   } catch (error) {
     console.error("Error uploading video:", error);
   }
 };
 
 onMounted(() => {
-  canvas.value.width = 800;
-  canvas.value.height = 600;
-  ctx.value = canvas.value.getContext("2d");
+  imageCanvas.value.width = drawingCanvas.value.width = 800;
+  imageCanvas.value.height = drawingCanvas.value.height = 600;
+  imageCtx.value = imageCanvas.value.getContext("2d");
+  drawingCtx.value = drawingCanvas.value.getContext("2d");
 
-  // Image 객체를 onMounted에서 생성
   image.value = new Image();
 
   image.value.onload = () => {
-    ctx.value.drawImage(
+    imageCtx.value.drawImage(
       image.value,
       0,
       0,
-      canvas.value.width,
-      canvas.value.height
+      imageCanvas.value.width,
+      imageCanvas.value.height
     );
   };
 
-  canvas.value.addEventListener("mousedown", startDrawing);
-  canvas.value.addEventListener("mouseup", endDrawing);
-  canvas.value.addEventListener("mousemove", draw);
+  drawingCanvas.value.addEventListener("mousedown", startDrawing);
+  drawingCanvas.value.addEventListener("mouseup", endDrawing);
+  drawingCanvas.value.addEventListener("mousemove", draw);
+  drawingCanvas.value.addEventListener("mouseout", endDrawing);
 });
 </script>
 
 <style scoped>
-.drawing-canvas {
-  border: 2px solid #000;
-  display: block;
+.canvas-container {
+  position: relative;
+  width: 800px;
+  height: 600px;
   margin-top: 20px;
-  width: 100%;
-  max-width: 800px;
-  height: auto;
-  background-color: green;
+}
+
+.image-canvas,
+.drawing-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 2px solid #000;
+}
+
+.drawing-canvas {
+  z-index: 1;
 }
 
 video {
@@ -232,5 +283,16 @@ input[type="number"] {
 button.active {
   background-color: #007bff;
   color: white;
+}
+
+.result {
+  width: 100%;
+  height: 600px;
+  overflow-y: auto;
+  border: 2px solid #000;
+}
+
+.submit {
+  margin: 20px 0;
 }
 </style>

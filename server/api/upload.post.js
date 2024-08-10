@@ -1,6 +1,13 @@
-import fs from "fs";
-import path from "path";
 import { IncomingForm } from "formidable";
+// To use the File API, use this import path for GoogleAIFileManager.
+// Note that this is a different import path than what you use for generating content.
+// For versions lower than @google/generative-ai@0.13.0
+// use "@google/generative-ai/files"
+import { FileState, GoogleAIFileManager } from "@google/generative-ai/server";
+import { defineEventHandler } from "h3";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const genAI = new GoogleGenerativeAI(process.env.API_KEY);
 
 export default defineEventHandler(async (event) => {
   const form = new IncomingForm();
@@ -14,14 +21,41 @@ export default defineEventHandler(async (event) => {
   });
 
   const file = parsedForm.files.video[0];
-  const uploadDir = path.join(process.cwd(), "uploads"); // 디렉토리 경로 설정
-  // if (!fs.existsSync(uploadDir)) {
-  //   fs.mkdirSync(uploadDir, { recursive: true });
-  // }
+  const filePath = file.filepath;
 
-  // 비디오 파일을 저장
-  // const filePath = path.join(uploadDir, file.originalFilename);
-  // fs.renameSync(file.filepath, filePath);
+  // Initialize GoogleAIFileManager with your API_KEY.
+  const fileManager = new GoogleAIFileManager(process.env.API_KEY);
 
-  return { status: "success", message: "File uploaded successfully!" };
+  // Upload the file and specify a display name.
+  const uploadResponse = await fileManager.uploadFile(filePath, {
+    mimeType: process.env.MIME_TYPE,
+    displayName: process.env.DISPLAY_NAME,
+  });
+
+  // Poll getFile() on a set interval (10 seconds here) to check file state.
+  let downloadFile = await fileManager.getFile(uploadResponse.file.name);
+
+  while (downloadFile.state === FileState.PROCESSING) {
+    process.stdout.write(".");
+    // Sleep for 10 seconds
+    await new Promise((resolve) => setTimeout(resolve, 10_000));
+    // Fetch the file from the API again
+    downloadFile = await fileManager.getFile(uploadResponse.file.name);
+  }
+
+  const model = genAI.getGenerativeModel({ model: process.env.MODEL });
+
+  const result = await model.generateContent([
+    {
+      fileData: {
+        mimeType: process.env.MIME_TYPE, // Adjust MIME type if needed
+        fileUri: uploadResponse.file.uri,
+      },
+    },
+    {
+      text: process.env.PROMPT,
+    },
+  ]);
+
+  return result.response.text();
 });
