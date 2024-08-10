@@ -65,7 +65,7 @@ const downloadLink = ref(null);
 const drawing = ref(false);
 const eraseMode = ref(false);
 const image = ref(null);
-const penColor = ref("#000"); // 기본 색상 설정
+const penColor = ref("#f00"); // 기본 색상 설정
 const penSize = ref(5); // 기본 펜 크기 설정
 const eraserSize = ref(20); // 기본 지우개 크기 설정
 const result = ref("");
@@ -200,6 +200,7 @@ const toggleEraseMode = () => {
 const submitVideo = async () => {
   if (!downloadLink.value) return;
 
+  result.value = "AI가 분석하는 중입니다... 기다려주세요";
   try {
     const response = await fetch(downloadLink.value);
     const blob = await response.blob();
@@ -215,6 +216,7 @@ const submitVideo = async () => {
     result.value = await uploadResponse.text();
   } catch (error) {
     console.error("Error uploading video:", error);
+    alert("Error uploading video:", error);
   }
 };
 
