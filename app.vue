@@ -146,8 +146,8 @@ const onImageUpload = (event) => {
 const startDrawing = (event) => {
   drawing.value = true;
   const rect = drawingCanvas.value.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
+  const x = (event.clientX || event.touches[0].clientX) - rect.left;
+  const y = (event.clientY || event.touches[0].clientY) - rect.top;
   drawingCtx.value.beginPath();
   drawingCtx.value.moveTo(x, y);
 };
@@ -173,8 +173,8 @@ const draw = (event) => {
   }
 
   const rect = drawingCanvas.value.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
+  const x = (event.clientX || event.touches[0].clientX) - rect.left;
+  const y = (event.clientY || event.touches[0].clientY) - rect.top;
 
   drawingCtx.value.lineTo(x, y);
   drawingCtx.value.stroke();
@@ -220,6 +220,23 @@ const submitVideo = async () => {
   }
 };
 
+const handleTouchStart = (event) => {
+  event.preventDefault();
+  const touch = event.touches[0];
+  startDrawing(touch);
+};
+
+const handleTouchMove = (event) => {
+  event.preventDefault();
+  const touch = event.touches[0];
+  draw(touch);
+};
+
+const handleTouchEnd = (event) => {
+  event.preventDefault();
+  endDrawing();
+};
+
 onMounted(() => {
   imageCanvas.value.width = drawingCanvas.value.width = 800;
   imageCanvas.value.height = drawingCanvas.value.height = 600;
@@ -242,6 +259,10 @@ onMounted(() => {
   drawingCanvas.value.addEventListener("mouseup", endDrawing);
   drawingCanvas.value.addEventListener("mousemove", draw);
   drawingCanvas.value.addEventListener("mouseout", endDrawing);
+
+  drawingCanvas.value.addEventListener("touchstart", handleTouchStart);
+  drawingCanvas.value.addEventListener("touchmove", handleTouchMove);
+  drawingCanvas.value.addEventListener("touchend", handleTouchEnd);
 });
 </script>
 
